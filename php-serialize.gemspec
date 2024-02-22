@@ -22,7 +22,7 @@ Gem::Specification.new do |spec|
 	spec.test_files = Dir["test/*_test.rb"]
 	spec.has_rdoc = true
 
-	spec.add_development_dependency "bundler", "~> 1.15"
-	spec.add_development_dependency "rake", "~> 10.0"
+	spec.add_development_dependency "test-unit", "~> 3.6"
+	spec.add_development_dependency "rake", "~> 13.0"
 	spec.required_ruby_version = '>= 2.4'
 end

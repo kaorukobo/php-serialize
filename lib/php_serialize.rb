@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'stringio'
+require 'ostruct'
 
 module PHP
 	class StringIOReader < StringIO
@@ -12,6 +13,16 @@ module PHP
 				val = read(idx - cpos + 1)
 			end
 			val
+		end
+	end
+
+	# Represents a serialized PHP object
+	class PhpObject < OpenStruct
+		# @return [String] The name of the original PHP class
+		attr_accessor :_php_classname
+
+		def to_assoc
+			each_pair.to_a
 		end
 	end
 
@@ -133,7 +144,8 @@ module PHP
 						handling_reference_for_recurring_object(var, index: this_value_index, state: state) {
 							v = var.to_assoc
 							# encode as Object with same name
-					s << "O:#{var.class.to_s.bytesize}:\"#{var.class.to_s.downcase}\":#{v.length}:{"
+					class_name = var.respond_to?(:_php_classname) ? var._php_classname : var.class.to_s.downcase
+					s << "O:#{class_name.bytesize}:\"#{class_name}\":#{v.length}:{"
 							v.each do |k,v|
 								s << "#{PHP.do_serialize(k.to_s, state)}#{PHP.do_serialize(v, state)}"
 							end
@@ -215,8 +227,8 @@ module PHP
 	# to be the class itself; i.e. something you could call .new on.
 	#
 	# If it's not found in 'classmap', the current constant namespace is searched,
-	# and failing that, a new Struct(classname) is generated, with the arguments
-	# for .new specified in the same order PHP provided; since PHP uses hashes
+	# and failing that, a new PHP::PhpObject (subclass of OpenStruct) is generated,
+	# with the properties in the same order PHP provided; since PHP uses hashes
 	# to represent attributes, this should be the same order they're specified
 	# in PHP, but this is untested.
 	#
@@ -299,7 +311,8 @@ module PHP
 			when 'O' # object, O:length:"class":length:{[attribute][value]...}
 				# class name (lowercase in PHP, grr)
 				len = string.read_until(':').to_i + 3 # quotes, seperator
-				klass = string.read(len)[1...-2].capitalize.intern # read it, kill useless quotes
+				klass_in_php = string.read(len)[1...-2]
+				klass = klass_in_php.capitalize.intern # read it, kill useless quotes
 
 				# read the attributes
 				attrs = []
@@ -323,9 +336,10 @@ module PHP
 						state.classmap[klass] = val = Module.const_get(klass)
 
 						val = val.new
-					rescue NameError # Nope; make a new Struct
-						state.classmap[klass] = val = Struct.new(klass.to_s, *attrs.collect { |v| v[0].to_s })
-						val = val.new
+					rescue NameError # Nope; make a new PhpObject
+						val = PhpObject.new.tap { |php_obj|
+							php_obj._php_classname = klass_in_php.to_s
+						}
 					end
 				end
 
